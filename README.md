@@ -1,4 +1,4 @@
-## 📜 SQL Code
+##  SQL Code
 
 ```sql
 WITH mix_ad AS (
