@@ -1,22 +1,75 @@
-#  Multi-Channel Ad Performance & Marketing Metrics Analysis (SQL)
+## 📜 SQL Code
 
-##  Project Overview
-This project consolidates, cleans, and analyzes daily performance data from **Facebook Ads** and **Google Ads** using Advanced SQL techniques. The goal is to unify multi-source marketing data, parse UTM parameters, and safely compute crucial KPI metrics without encountering runtime errors.
+```sql
+WITH mix_ad AS (
+    SELECT 
+        'facebook_ads' AS media_source, 
+        f.ad_date,
+        COALESCE(f.url_parameters, '0') AS url_parameters,
+        COALESCE(f.spend, 0) AS spend,
+        COALESCE(f.impressions, 0) AS impressions,
+        COALESCE(f.reach, 0) AS reach, 
+        COALESCE(f.clicks, 0) AS clicks,
+        COALESCE(f.leads, 0) AS leads, 
+        COALESCE(f.value, 0) AS value 
+    FROM facebook_ads_basic_daily f 
 
-##  Key Technical Highlights
-- **Data Integration:** Combined disparate sources (`facebook_ads_basic_daily` & `google_ads_basic_daily`) using `UNION ALL`.
-- **Handling Missing Values:** Applied `COALESCE` to standardize null metrics to numerical `0` and text attributes to `'0'`.
-- **Regex & Text Extraction:** Extracted `utm_campaign` from complex URL string parameters using `REGEXP_SUBSTR` / `SUBSTRING`.
-- **Data Normalization:** Cleaned text string levels using `LOWER()` and handled non-standard `'nan'` strings with conditional logic/`NULLIF`.
-- **Zero-Division Protection:** Calculated high-level marketing KPIs (**CTR, CPC, CPM, ROMI**) using `CASE WHEN` logic to prevent division-by-zero errors without relying on `WHERE` clauses.
+    UNION ALL 
 
-##  Formulas & Metrics Calculated
-| Metric | Formula | Zero-Division Handling |
-| :--- | :--- | :--- |
-| **CTR** | `(Clicks / Impressions) * 100` | Checked if `Impressions = 0` |
-| **CPC** | `Spend / Clicks` | Checked if `Clicks = 0` |
-| **CPM** | `(Spend / Impressions) * 1000` | Checked if `Impressions = 0` |
-| **ROMI** | `((Value - Spend) / Spend) * 100` | Checked if `Spend = 0` |
+    SELECT  
+        'google_ads' AS media_source,
+        g.ad_date,
+        COALESCE(g.url_parameters, '0') AS url_parameters,
+        COALESCE(g.spend, 0) AS spend,
+        COALESCE(g.impressions, 0) AS impressions,
+        COALESCE(g.reach, 0) AS reach, 
+        COALESCE(g.clicks, 0) AS clicks,
+        COALESCE(g.leads, 0) AS leads, 
+        COALESCE(g.value, 0) AS value 
+    FROM google_ads_basic_daily g
+),
 
-## 🚀 How to Run
-Run the provided `ad_performance_analysis.sql` script on any PostgreSQL or compatible relational database environment containing the daily ad performance tables.
+calculated_metrics AS (
+    SELECT
+        media_source,
+        ad_date,
+        
+        -- utm_campaign ayıklama, küçük harfe çevirme ve 'nan' ise NULL yapma
+        CASE 
+            WHEN LOWER(SUBSTRING(url_parameters FROM 'utm_campaign=([^&]*)')) = 'nan' THEN NULL 
+            ELSE LOWER(SUBSTRING(url_parameters FROM 'utm_campaign=([^&]*)'))
+        END AS utm_campaign,
+        
+        -- Temel Metrikler
+        spend,
+        impressions,
+        clicks,
+        value,
+        
+        -- Sıfıra bölme korumalı KPI hesaplamaları
+        CASE 
+            WHEN impressions = 0 THEN 0 
+            ELSE (clicks::NUMERIC / impressions) * 100 
+        END AS ctr,
+        
+        CASE 
+            WHEN clicks = 0 THEN 0 
+            ELSE spend::NUMERIC / clicks 
+        END AS cpc,
+        
+        CASE 
+            WHEN impressions = 0 THEN 0 
+            ELSE (spend::NUMERIC / impressions) * 1000 
+        END AS cpm,
+        
+        CASE 
+            WHEN spend = 0 THEN 0 
+            ELSE ((value - spend)::NUMERIC / spend) * 100 
+        END AS romi
+
+    FROM mix_ad
+)
+
+SELECT * 
+FROM calculated_metrics;
+```
